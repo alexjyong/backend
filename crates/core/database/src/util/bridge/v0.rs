@@ -1,7 +1,8 @@
+use iso8601_timestamp::Timestamp;
 use revolt_models::v0::*;
 use revolt_permissions::{calculate_user_permissions, UserPermission};
 
-use crate::{util::permissions::DatabasePermissionQuery, Database, FileUsedFor};
+use crate::{util::permissions::DatabasePermissionQuery, Database};
 
 impl crate::Bot {
     pub fn into_public_bot(self, user: crate::User) -> PublicBot {
@@ -14,8 +15,7 @@ impl crate::Bot {
             avatar: user.avatar.map(|x| x.id).unwrap_or_default(),
             description: user
                 .profile
-                .map(|profile| profile.content)
-                .flatten()
+                .and_then(|profile| profile.content)
                 .unwrap_or_default(),
         }
     }
@@ -488,7 +488,7 @@ impl crate::Message {
             reactions: self.reactions,
             interactions: self.interactions.into(),
             masquerade: self.masquerade.map(Into::into),
-            flags: self.flags.map(|flags| flags as u32).unwrap_or_default(),
+            flags: self.flags.unwrap_or_default(),
             pinned: self.pinned,
         }
     }
@@ -517,7 +517,7 @@ impl From<crate::PartialMessage> for PartialMessage {
             reactions: value.reactions,
             interactions: value.interactions.map(Into::into),
             masquerade: value.masquerade.map(Into::into),
-            flags: value.flags.map(|flags| flags as u32),
+            flags: value.flags,
             pinned: value.pinned,
         }
     }
@@ -593,6 +593,17 @@ impl From<Masquerade> for crate::Masquerade {
             name: value.name,
             avatar: value.avatar,
             colour: value.colour,
+        }
+    }
+}
+
+impl From<crate::PolicyChange> for PolicyChange {
+    fn from(value: crate::PolicyChange) -> Self {
+        PolicyChange {
+            created_time: value.created_time,
+            effective_time: value.effective_time,
+            description: value.description,
+            url: value.url,
         }
     }
 }
@@ -696,6 +707,7 @@ impl From<crate::FieldsMember> for FieldsMember {
             crate::FieldsMember::Nickname => FieldsMember::Nickname,
             crate::FieldsMember::Roles => FieldsMember::Roles,
             crate::FieldsMember::Timeout => FieldsMember::Timeout,
+            crate::FieldsMember::JoinedAt => FieldsMember::JoinedAt,
         }
     }
 }
@@ -707,6 +719,7 @@ impl From<FieldsMember> for crate::FieldsMember {
             FieldsMember::Nickname => crate::FieldsMember::Nickname,
             FieldsMember::Roles => crate::FieldsMember::Roles,
             FieldsMember::Timeout => crate::FieldsMember::Timeout,
+            FieldsMember::JoinedAt => crate::FieldsMember::JoinedAt,
         }
     }
 }
@@ -1102,7 +1115,7 @@ impl crate::User {
     }
 
     /// Convert user object into user model without presence information
-    pub async fn into_known_static<'a>(self, is_online: bool) -> User {
+    pub async fn into_known_static(self, is_online: bool) -> User {
         let badges = self.get_badges().await;
 
         User {
@@ -1188,6 +1201,7 @@ impl From<User> for crate::User {
             privileged: value.privileged,
             bot: value.bot.map(Into::into),
             suspended_until: None,
+            last_acknowledged_policy_change: Timestamp::UNIX_EPOCH,
         }
     }
 }

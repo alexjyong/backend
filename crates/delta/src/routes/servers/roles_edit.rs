@@ -6,18 +6,17 @@ use revolt_models::v0;
 use revolt_permissions::{calculate_server_permissions, ChannelPermission};
 use revolt_result::{create_error, Result};
 use rocket::{serde::json::Json, State};
-use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 /// # Edit Role
 ///
 /// Edit a role by its id.
 #[openapi(tag = "Server Permissions")]
-#[patch("/<target>/roles/<role_id>", data = "<data>")]
+#[patch("/<target>/roles/<role_id>", data = "<data>", rank = 1)]
 pub async fn edit(
     db: &State<Database>,
     user: User,
-    target: Reference,
+    target: Reference<'_>,
     role_id: String,
     data: Json<v0::DataEditRole>,
 ) -> Result<Json<v0::Role>> {
@@ -46,22 +45,14 @@ pub async fn edit(
             name,
             colour,
             hoist,
-            rank,
             remove,
+            ..
         } = data;
-
-        // Prevent us from moving a role above other roles
-        if let Some(rank) = &rank {
-            if rank <= &member_rank {
-                return Err(create_error!(NotElevated));
-            }
-        }
 
         let partial = PartialRole {
             name,
             colour,
             hoist,
-            rank,
             ..Default::default()
         };
 
@@ -70,9 +61,7 @@ pub async fn edit(
             &server.id,
             &role_id,
             partial,
-            remove
-                .map(|v| v.into_iter().map(Into::into).collect())
-                .unwrap_or_default(),
+            remove.into_iter().map(Into::into).collect(),
         )
         .await?;
 

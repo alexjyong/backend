@@ -1,6 +1,6 @@
 use revolt_database::{
     util::{permissions::DatabasePermissionQuery, reference::Reference},
-    Database, PartialServer, Server, User,
+    Database, PartialServer, User,
 };
 use revolt_models::v0;
 use revolt_permissions::{
@@ -14,10 +14,10 @@ use rocket::{serde::json::Json, State};
 /// Sets permissions for the default role in this server.
 #[openapi(tag = "Server Permissions")]
 #[put("/<target>/permissions/default", data = "<data>", rank = 1)]
-pub async fn set_default_permissions(
+pub async fn set_default_server_permissions(
     db: &State<Database>,
     user: User,
-    target: Reference,
+    target: Reference<'_>,
     data: Json<DataPermissionsValue>,
 ) -> Result<Json<v0::Server>> {
     let data = data.into_inner();

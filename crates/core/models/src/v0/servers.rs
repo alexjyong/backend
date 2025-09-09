@@ -175,6 +175,8 @@ auto_derived!(
         /// Ranking position
         ///
         /// Smaller values take priority.
+        ///
+        /// **Removed** - no effect, use the edit server role positions route
         pub rank: Option<i64>,
     }
 
@@ -247,8 +249,8 @@ auto_derived!(
         pub analytics: Option<bool>,
 
         /// Fields to remove from server object
-        #[cfg_attr(feature = "validator", validate(length(min = 1)))]
-        pub remove: Option<Vec<FieldsServer>>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        pub remove: Vec<FieldsServer>,
     }
 
     /// New role information
@@ -267,11 +269,11 @@ auto_derived!(
         pub hoist: Option<bool>,
         /// Ranking position
         ///
-        /// Smaller values take priority.
+        /// **Removed** - no effect, use the edit server role positions route
         pub rank: Option<i64>,
         /// Fields to remove from role object
-        #[cfg_attr(feature = "validator", validate(length(min = 1)))]
-        pub remove: Option<Vec<FieldsRole>>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        pub remove: Vec<FieldsRole>,
     }
 
     /// New role permissions
@@ -285,5 +287,10 @@ auto_derived!(
     pub struct OptionsServerDelete {
         /// Whether to not send a leave message
         pub leave_silently: Option<bool>,
+    }
+
+    /// New role positions
+    pub struct DataEditRoleRanks {
+        pub ranks: Vec<String>,
     }
 );

@@ -8,9 +8,12 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
 use crate::{
-    events::client::EventV1, tasks::ack::AckEvent, Database, File, IntoDocumentPath, PartialServer,
+    events::client::EventV1, Database, File, PartialServer,
     Server, SystemMessage, User, AMQP,
 };
+
+#[cfg(feature = "mongodb")]
+use crate::IntoDocumentPath;
 
 auto_derived!(
     #[serde(tag = "channel_type")]
@@ -328,13 +331,10 @@ impl Channel {
 
             db.insert_channel(&channel).await?;
 
-            match &channel {
-                Channel::DirectMessage { .. } => {
-                    let event = EventV1::ChannelCreate(channel.clone().into());
-                    event.clone().private(user_a.id.clone()).await;
-                    event.private(user_b.id.clone()).await;
-                }
-                _ => {}
+            if let Channel::DirectMessage { .. } = &channel {
+                let event = EventV1::ChannelCreate(channel.clone().into());
+                event.clone().private(user_a.id.clone()).await;
+                event.private(user_b.id.clone()).await;
             };
 
             Ok(channel)
@@ -649,10 +649,11 @@ impl Channel {
         .private(user.to_string())
         .await;
 
+        #[cfg(feature = "tasks")]
         crate::tasks::ack::queue_ack(
             self.id().to_string(),
             user.to_string(),
-            AckEvent::AckMessage {
+            crate::tasks::ack::AckEvent::AckMessage {
                 id: message.to_string(),
             },
         )
@@ -769,6 +770,7 @@ impl Channel {
     }
 }
 
+#[cfg(feature = "mongodb")]
 impl IntoDocumentPath for FieldsChannel {
     fn as_path(&self) -> Option<&'static str> {
         Some(match self {

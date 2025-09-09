@@ -21,7 +21,7 @@ pub async fn message_send(
     db: &State<Database>,
     amqp: &State<AMQP>,
     user: User,
-    target: Reference,
+    target: Reference<'_>,
     data: Json<v0::DataMessageSend>,
     idempotency: IdempotencyKey,
 ) -> Result<Json<v0::Message>> {
@@ -84,7 +84,8 @@ pub async fn message_send(
     // Create model user / members
     let model_user = user
         .clone()
-        .into_known_static(revolt_presence::is_online(&user.id).await).await;
+        .into_known_static(revolt_presence::is_online(&user.id).await)
+        .await;
 
     let model_member: Option<v0::Member> = query
         .member_ref()
@@ -201,7 +202,7 @@ mod test {
         Member::create(&harness.db, &server, &user, Some(channels.clone()))
             .await
             .expect("Failed to create member");
-        let member = Reference::from_unchecked(user.id.clone())
+        let member = Reference::from_unchecked(&user.id)
             .as_member(&harness.db, &server.id)
             .await
             .expect("Failed to get member");
@@ -241,7 +242,7 @@ mod test {
         Member::create(&harness.db, &server, &second_user, Some(channels.clone()))
             .await
             .expect("Failed to create second member");
-        let mut second_member = Reference::from_unchecked(second_user.id.clone())
+        let mut second_member = Reference::from_unchecked(&second_user.id)
             .as_member(&harness.db, &server.id)
             .await
             .expect("Failed to get second member");
@@ -491,7 +492,7 @@ mod test {
         let (_, _, other_user) = harness.new_user().await;
         let (server, _) = harness.new_server(&user).await;
         let channel = harness.new_channel(&server).await;
-        let (role_id, mut role) = harness
+        let (role_id, _role) = harness
             .new_role(
                 &server,
                 1,

@@ -100,6 +100,18 @@ impl State {
         let user = self.clone_user();
         self.cache.is_bot = user.bot.is_some();
 
+        // Fetch pending policy changes.
+        let policy_changes = if user.bot.is_some() {
+            vec![]
+        } else {
+            db.fetch_policy_changes()
+                .await?
+                .into_iter()
+                .filter(|policy| policy.created_time > user.last_acknowledged_policy_change)
+                .map(Into::into)
+                .collect()
+        };
+
         // Find all relationships to the user.
         let mut user_ids: HashSet<String> = user
             .relations
@@ -175,7 +187,7 @@ impl State {
             .iter()
             .find(|e| matches!(e, ReadyPayloadFields::UserSettings(_)))
         {
-            Some(db.fetch_user_settings(&user.id, &keys).await?)
+            Some(db.fetch_user_settings(&user.id, keys).await?)
         } else {
             None
         };
@@ -199,12 +211,11 @@ impl State {
             .collect();
 
         // Make all users appear from our perspective.
-        let mut users: Vec<v0::User> = join_all(users
-            .into_iter()
-            .map(|other_user| async {
-                let is_online = online_ids.contains(&other_user.id);
-                other_user.into_known(&user, is_online).await
-            })).await;
+        let mut users: Vec<v0::User> = join_all(users.into_iter().map(|other_user| async {
+            let is_online = online_ids.contains(&other_user.id);
+            other_user.into_known(&user, is_online).await
+        }))
+        .await;
 
         // Make sure we see our own user correctly.
         users.push(user.into_self(true).await);
@@ -228,6 +239,7 @@ impl State {
         for channel in &channels {
             self.insert_subscription(channel.id().to_string()).await;
         }
+
         Ok(EventV1::Ready {
             users: if fields.contains(&ReadyPayloadFields::Users) {
                 Some(users)
@@ -253,6 +265,8 @@ impl State {
 
             user_settings,
             channel_unreads: channel_unreads.map(|vec| vec.into_iter().map(Into::into).collect()),
+
+            policy_changes,
         })
     }
 

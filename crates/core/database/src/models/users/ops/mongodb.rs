@@ -1,6 +1,7 @@
 use ::mongodb::options::{Collation, CollationStrength, FindOneOptions, FindOptions};
 use authifier::models::Session;
 use futures::StreamExt;
+use iso8601_timestamp::Timestamp;
 use revolt_result::Result;
 
 use crate::DocumentId;
@@ -211,16 +212,34 @@ impl AbstractUsers for MongoDb {
         partial: &PartialUser,
         remove: Vec<FieldsUser>,
     ) -> Result<()> {
-        query!(
-            self,
-            update_one_by_id,
-            COL,
-            id,
-            partial,
-            remove.iter().map(|x| x as &dyn IntoDocumentPath).collect(),
-            None
-        )
-        .map(|_| ())
+        if remove.contains(&FieldsUser::StatusText) && partial.status.is_some() {
+            // stupid-ass workaround to fix mongo conflicting the same item
+            let _: Result<()> = query!(
+                self,
+                update_one_by_id,
+                COL,
+                id,
+                PartialUser {
+                    ..Default::default()
+                },
+                remove.iter().map(|x| x as &dyn IntoDocumentPath).collect(),
+                None
+            )
+            .map(|_| ());
+
+            query!(self, update_one_by_id, COL, id, partial, vec![], None).map(|_| ())
+        } else {
+            query!(
+                self,
+                update_one_by_id,
+                COL,
+                id,
+                partial,
+                remove.iter().map(|x| x as &dyn IntoDocumentPath).collect(),
+                None
+            )
+            .map(|_| ())
+        }
     }
 
     /// Set relationship with another user
@@ -317,7 +336,26 @@ impl AbstractUsers for MongoDb {
             )
             .await
             .map(|_| ())
-            .map_err(|_| create_database_error!("update_one", COL))
+            .map_err(|_| create_database_error!("update_one", "sessions"))
+    }
+
+    async fn update_session_last_seen(&self, session_id: &str, when: Timestamp) -> Result<()> {
+        let formatted: &str = &when.format();
+
+        self.col::<Session>("sessions")
+            .update_one(
+                doc! {
+                    "_id": session_id
+                },
+                doc! {
+                    "$set": {
+                        "last_seen": formatted
+                    }
+                },
+            )
+            .await
+            .map(|_| ())
+            .map_err(|_| create_database_error!("update_one", "sessions"))
     }
 }
 

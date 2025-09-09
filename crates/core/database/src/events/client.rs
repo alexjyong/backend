@@ -6,7 +6,7 @@ use revolt_models::v0::{
     AppendMessage, Channel, ChannelUnread, Emoji, FieldsChannel, FieldsMember, FieldsMessage,
     FieldsRole, FieldsServer, FieldsUser, FieldsWebhook, Member, MemberCompositeKey, Message,
     PartialChannel, PartialMember, PartialMessage, PartialRole, PartialServer, PartialUser,
-    PartialWebhook, RemovalIntention, Report, Server, User, UserSettings, Webhook,
+    PartialWebhook, PolicyChange, RemovalIntention, Report, Server, User, UserSettings, Webhook,
 };
 
 use crate::Database;
@@ -62,6 +62,8 @@ pub enum EventV1 {
         user_settings: Option<UserSettings>,
         #[serde(skip_serializing_if = "Option::is_none")]
         channel_unreads: Option<Vec<ChannelUnread>>,
+
+        policy_changes: Vec<PolicyChange>,
     },
 
     /// Ping response
@@ -142,7 +144,13 @@ pub enum EventV1 {
     },
 
     /// User joins server
-    ServerMemberJoin { id: String, user: String },
+    ServerMemberJoin {
+        id: String,
+        // Deprecated: use member.id.user
+        #[deprecated = "Use member.id.user instead"]
+        user: String,
+        member: Member,
+    },
 
     /// User left server
     ServerMemberLeave {
@@ -162,6 +170,9 @@ pub enum EventV1 {
 
     /// Server role deleted
     ServerRoleDelete { id: String, role_id: String },
+
+    /// Server roles ranks updated
+    ServerRoleRanksUpdate { id: String, ranks: Vec<String> },
 
     /// Update existing user
     UserUpdate {

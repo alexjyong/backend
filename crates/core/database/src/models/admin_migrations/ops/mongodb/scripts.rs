@@ -1,14 +1,19 @@
-use std::{collections::HashSet, ops::BitXor, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::BitXor,
+    time::Duration,
+};
 
 use crate::{
     mongodb::{
         bson::{doc, from_bson, from_document, to_document, Bson, DateTime, Document},
         options::FindOptions,
     },
-    AbstractChannels, AbstractServers, Channel, Invite, MongoDb, DISCRIMINATOR_SEARCH_SPACE,
+    AbstractChannels, AbstractServers, Channel, Invite, MongoDb, User, DISCRIMINATOR_SEARCH_SPACE,
 };
-use bson::oid::ObjectId;
+use bson::{oid::ObjectId, to_bson};
 use futures::StreamExt;
+use iso8601_timestamp::Timestamp;
 use rand::seq::SliceRandom;
 use revolt_permissions::DEFAULT_WEBHOOK_PERMISSIONS;
 use revolt_result::{Error, ErrorType};
@@ -21,7 +26,7 @@ struct MigrationInfo {
     revision: i32,
 }
 
-pub const LATEST_REVISION: i32 = 31;
+pub const LATEST_REVISION: i32 = 42; // MUST BE +1 to last migration
 
 pub async fn migrate_database(db: &MongoDb) {
     let migrations = db.col::<Document>("migrations");
@@ -1125,6 +1130,99 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                 }
                 Err(err) => panic!("{err:?}"),
             }
+        }
+    }
+
+    if revision <= 32 {
+        info!(
+            "Running migration [revision 32 / 12-05-2025]: (Authifier) Add last_seen to sessions."
+        );
+
+        let db = authifier::Database::MongoDb(authifier::database::MongoDb(db.db()));
+        db.run_migration(authifier::Migration::M2025_02_20AddLastSeenToSession)
+            .await
+            .unwrap();
+    }
+
+    if revision <= 40 {
+        info!(
+            "Running migration [revision |> 40 / 30-05-2025]: Set last policy acknowlegement date to now and create policy changes collection."
+        );
+
+        db.db()
+            .create_collection("policy_changes")
+            .await
+            .expect("Failed to create policy_changes collection.");
+
+        db.db()
+            .collection::<User>("users")
+            .update_many(
+                doc! {},
+                doc! {
+                    "$set": {
+                        "last_acknowledged_policy_change": to_bson(&Timestamp::now_utc())
+                            .expect("failed to serialise timestamp")
+                    }
+                },
+            )
+            .await
+            .expect("failed to update users");
+    }
+
+    if revision <= 41 {
+        info!(
+            "Running migration [revision 41 / 05-06-2025]: convert role ranks to uniform numbers."
+        );
+
+        #[derive(Serialize, Deserialize, Clone)]
+        struct Role {
+            pub rank: i64,
+        }
+
+        #[derive(Serialize, Deserialize, Clone)]
+        struct Server {
+            #[serde(rename = "_id")]
+            pub id: String,
+            #[serde(default = "HashMap::<String, Role>::new")]
+            pub roles: HashMap<String, Role>,
+        }
+
+        let mut servers = db
+            .db()
+            .collection::<Server>("servers")
+            .find(doc! {
+                "roles": {
+                    "$exists": true,
+                    "$ne": []
+                }
+            })
+            .await
+            .unwrap()
+            .filter_map(|s| async { s.ok() })
+            .boxed();
+
+        while let Some(server) = servers.next().await {
+            let mut ordered_roles = server.roles.clone().into_iter().collect::<Vec<_>>();
+            ordered_roles.sort_by(|(_, role_a), (_, role_b)| role_a.rank.cmp(&role_b.rank));
+            let ordered_roles = ordered_roles
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect::<Vec<_>>();
+
+            let mut doc = doc! {};
+
+            for id in server.roles.keys() {
+                doc.insert(
+                    format!("roles.{id}.rank"),
+                    ordered_roles.iter().position(|x| id == x).unwrap() as i64,
+                );
+            }
+
+            db.db()
+                .collection::<Server>("servers")
+                .update_one(doc! { "_id": &server.id }, doc! { "$set": doc })
+                .await
+                .unwrap();
         }
     }
 

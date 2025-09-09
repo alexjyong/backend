@@ -1,12 +1,11 @@
 use revolt_database::{
     util::{permissions::DatabasePermissionQuery, reference::Reference},
-    Channel, Database, User,
+    Database, User,
 };
 use revolt_models::v0;
 use revolt_permissions::{calculate_channel_permissions, ChannelPermission, Override};
 use revolt_result::{create_error, Result};
 use rocket::{serde::json::Json, State};
-use serde::Deserialize;
 
 /// # Set Role Permission
 ///
@@ -18,7 +17,7 @@ use serde::Deserialize;
 pub async fn set_role_permissions(
     db: &State<Database>,
     user: User,
-    target: Reference,
+    target: Reference<'_>,
     role_id: String,
     data: Json<v0::DataSetRolePermissions>,
 ) -> Result<Json<v0::Channel>> {

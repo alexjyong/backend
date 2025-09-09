@@ -109,6 +109,7 @@ fn resolve_bucket<'r>(request: &'r rocket::Request<'_>) -> (&'r str, Option<&'r 
     };
 
     if let Some(segment) = segment {
+        #[allow(clippy::redundant_locals)]
         let resource = resource;
 
         let method = request.method();
@@ -254,7 +255,7 @@ impl<'r> FromRequest<'r> for Ratelimiter {
     }
 }
 
-impl<'r> OpenApiFromRequest<'r> for Ratelimiter {
+impl OpenApiFromRequest<'_> for Ratelimiter {
     fn from_request_input(
         _gen: &mut OpenApiGenerator,
         _name: String,

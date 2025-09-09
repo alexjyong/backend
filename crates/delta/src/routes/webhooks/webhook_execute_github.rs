@@ -588,6 +588,7 @@ pub enum PullRequestEvent {
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum BaseEvent {
+    #[allow(dead_code)]
     Star(StarEvent),
     Ping,
     Push(PushEvent),
@@ -620,7 +621,7 @@ pub struct Event {
 #[derive(Debug, JsonSchema)]
 pub struct EventHeader<'r>(pub &'r str);
 
-impl<'r> std::ops::Deref for EventHeader<'r> {
+impl std::ops::Deref for EventHeader<'_> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
@@ -751,7 +752,7 @@ fn convert_event(data: &str, event_name: &str) -> Result<Event> {
 pub async fn webhook_execute_github(
     db: &State<Database>,
     amqp: &State<AMQP>,
-    webhook_id: Reference,
+    webhook_id: Reference<'_>,
     token: String,
     event: EventHeader<'_>,
     data: String,
@@ -829,7 +830,7 @@ pub async fn webhook_execute_github(
                         })
                         .collect::<Vec<String>>()
                         .join("\n"),
-                        1000
+                    1000,
                 );
 
                 SendableEmbed {

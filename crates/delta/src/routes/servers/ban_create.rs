@@ -4,12 +4,9 @@ use revolt_database::{
 };
 use revolt_models::v0;
 
-use revolt_permissions::{
-    calculate_channel_permissions, calculate_server_permissions, ChannelPermission,
-};
+use revolt_permissions::{calculate_server_permissions, ChannelPermission};
 use revolt_result::{create_error, Result};
 use rocket::{serde::json::Json, State};
-use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 /// # Ban User
@@ -20,8 +17,8 @@ use validator::Validate;
 pub async fn ban(
     db: &State<Database>,
     user: User,
-    server: Reference,
-    target: Reference,
+    server: Reference<'_>,
+    target: Reference<'_>,
     data: Json<v0::DataBanCreate>,
 ) -> Result<Json<v0::ServerBan>> {
     let data = data.into_inner();
@@ -59,7 +56,7 @@ pub async fn ban(
             .await?;
     }
 
-    ServerBan::create(db, &server, &target.id, data.reason)
+    ServerBan::create(db, &server, target.id, data.reason)
         .await
         .map(Into::into)
         .map(Json)

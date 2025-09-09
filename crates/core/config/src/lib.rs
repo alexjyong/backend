@@ -6,9 +6,12 @@ use futures_locks::RwLock;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 
+#[cfg(feature = "sentry")]
 pub use sentry::{capture_error, capture_message, Level};
+#[cfg(feature = "anyhow")]
+pub use sentry_anyhow::capture_anyhow;
 
-#[cfg(feature = "report-macros")]
+#[cfg(all(feature = "report-macros", feature = "sentry"))]
 #[macro_export]
 macro_rules! report_error {
     ( $expr: expr, $error: ident $( $tt:tt )? ) => {
@@ -23,7 +26,7 @@ macro_rules! report_error {
     };
 }
 
-#[cfg(feature = "report-macros")]
+#[cfg(all(feature = "report-macros", feature = "sentry"))]
 #[macro_export]
 macro_rules! capture_internal_error {
     ( $expr: expr ) => {
@@ -34,7 +37,7 @@ macro_rules! capture_internal_error {
     };
 }
 
-#[cfg(feature = "report-macros")]
+#[cfg(all(feature = "report-macros", feature = "sentry"))]
 #[macro_export]
 macro_rules! report_internal_error {
     ( $expr: expr ) => {
@@ -59,6 +62,9 @@ static CONFIG_SEARCH_PATHS: [&str; 3] = [
     "/Revolt.toml",
 ];
 
+/// Path to search for test overrides
+static TEST_OVERRIDE_PATH: &str = "Revolt.test-overrides.toml";
+
 /// Configuration builder
 static CONFIG_BUILDER: Lazy<RwLock<Config>> = Lazy::new(|| {
     RwLock::new({
@@ -72,6 +78,20 @@ static CONFIG_BUILDER: Lazy<RwLock<Config>> = Lazy::new(|| {
                 include_str!("../Revolt.test.toml"),
                 FileFormat::Toml,
             ));
+
+            // recursively search upwards for an overrides file (if there is one)
+            if let Ok(cwd) = std::env::current_dir() {
+                let mut path = Some(cwd.as_path());
+                while let Some(current_path) = path {
+                    let target_path = current_path.join(TEST_OVERRIDE_PATH);
+                    if target_path.exists() {
+                        builder = builder
+                            .add_source(File::new(target_path.to_str().unwrap(), FileFormat::Toml));
+                    }
+
+                    path = current_path.parent();
+                }
+            }
         }
 
         for path in CONFIG_SEARCH_PATHS {
@@ -123,6 +143,7 @@ pub struct ApiSmtp {
     pub reply_to: Option<String>,
     pub port: Option<i32>,
     pub use_tls: Option<bool>,
+    pub use_starttls: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -168,6 +189,7 @@ pub struct ApiSecurity {
     pub voso_legacy_token: String,
     pub captcha: ApiSecurityCaptcha,
     pub trust_cloudflare: bool,
+    pub easypwned: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -177,7 +199,7 @@ pub struct ApiWorkers {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ApiUsers {
-    pub early_adopter_cutoff: Option<u64>
+    pub early_adopter_cutoff: Option<u64>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -341,6 +363,7 @@ pub struct Sentry {
     pub events: String,
     pub files: String,
     pub proxy: String,
+    pub pushd: String,
     pub crond: String,
 }
 
@@ -384,6 +407,11 @@ pub async fn read() -> Config {
 pub async fn config() -> Settings {
     let mut config = read().await.try_deserialize::<Settings>().unwrap();
 
+    // inject REDIS_URI for redis-kiss library
+    if std::env::var("REDIS_URL").is_err() {
+        std::env::set_var("REDIS_URI", config.database.redis.clone());
+    }
+
     // auto-detect production nodes
     if config.hosts.api.contains("https") && config.hosts.api.contains("revolt.chat") {
         config.production = true;
@@ -393,6 +421,7 @@ pub async fn config() -> Settings {
 }
 
 /// Configure logging and common Rust variables
+#[cfg(feature = "sentry")]
 pub async fn setup_logging(release: &'static str, dsn: String) -> Option<sentry::ClientInitGuard> {
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
@@ -400,12 +429,6 @@ pub async fn setup_logging(release: &'static str, dsn: String) -> Option<sentry:
 
     if std::env::var("ROCKET_ADDRESS").is_err() {
         std::env::set_var("ROCKET_ADDRESS", "0.0.0.0");
-    }
-
-    if std::env::var("REDIS_URL").is_err() {
-        // Configure redis-kiss library
-        let config = config().await;
-        std::env::set_var("REDIS_URI", config.database.redis);
     }
 
     pretty_env_logger::init();
@@ -424,6 +447,7 @@ pub async fn setup_logging(release: &'static str, dsn: String) -> Option<sentry:
     }
 }
 
+#[cfg(feature = "sentry")]
 #[macro_export]
 macro_rules! configure {
     ($application: ident) => {
